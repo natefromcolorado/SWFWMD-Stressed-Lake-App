@@ -1,0 +1,154 @@
+---
+output: pdf_document
+header-includes:
+- \usepackage{fancyhdr}
+- \pagestyle{fancy}
+- \fancyheadoffset{0.0cm}
+- \fancyhead[C]{\textit{Stressed Lake Evaluation Report}}
+- \renewcommand{\footrulewidth}{0.4pt}% default is 0pt
+- \fancyfoot[RO,LE]{\thepage}
+- \fancyfoot[C]{\textit{Southwest Florida Water Management District}}
+- \renewcommand{\maketitle}{\par}
+linkcolor: blue
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE)
+library(knitr)
+```
+
+```{r}
+spdf = split(dataForm(), dataForm()$siteID)
+spdf = lapply(spdf, function(x) x[order(x["date"]),])
+beginDate = as.matrix(as.data.frame(lapply(spdf, function(x) min(x$date, na.rm = TRUE))))[1,]
+endDate = as.matrix(as.data.frame(lapply(spdf, function(x) max(x$date, na.rm = TRUE))))[1,]
+min = sapply(spdf, function(x) min(x$level, na.rm = TRUE))
+max = sapply(spdf, function(x) max(x$level, na.rm = TRUE))
+obs = sapply(spdf, function(x) nrow(x))
+# maxGap = sapply(spdf, function(x) as.integer(max(diff(x$date))))
+p10 = sapply(spdf, function(x) quantile(x$level, 0.1, na.rm = TRUE))
+p50 = sapply(spdf, function(x) quantile(x$level, 0.5, na.rm = TRUE))
+p90 = sapply(spdf, function(x) quantile(x$level, 0.9, na.rm = TRUE))
+summary = data.frame(name = names(max), beginDate, endDate, obs, min, p10,p50,p90,max)
+
+inventory1 = inventory()[c("SITE_ID", "SITE_NAME")]
+inv = merge(inventory1, summary, by.x = "SITE_ID", by.y = "name")
+names(inv) = c("SID", "name", "beginDate", "endDate", 
+               "obs", "min", "p10","p50","p90","max")    
+inv$SID <- as.integer(inv$SID)
+```
+
+
+```{r}
+dtFinal = data.frame()
+for(i in 0:15){
+  #         i = 0
+  dataFormMon5year <- dataFormMon()[
+    as.Date(paste0(dataFormMon()$date, "-01"), 
+            format = "%Y-%m-%d") > as.Date(input$stressDate)-((i+5)*365.25),]
+  dataFormMon5year <- dataFormMon5year[
+    as.Date(paste0(dataFormMon5year$date, "-01"), 
+            format = "%Y-%m-%d") < as.Date(input$stressDate)-((i)*365.25),]
+  dataFormMon1year <- dataFormMon5year[
+    as.Date(paste0(dataFormMon5year$date, "-01"), 
+            format = "%Y-%m-%d") > as.Date(input$stressDate)-((i+1)*365.25),]
+  
+  stationMetaDataSubset = subset(stationMetaData, 
+                                 SID == unlist(strsplit(as.character(input$stationName), ","))[1])[1,]
+  
+  dataP66 <- as.numeric(quantile(dataFormMon5year$level, 0.66667, na.rm = TRUE))
+  dataP40 <- as.numeric(quantile(dataFormMon5year$level, 0.40, na.rm = TRUE))
+  count5year <- nrow(dataFormMon5year)
+  count1year <- nrow(dataFormMon1year)
+  dtStressed = data.frame("Evaluation Date" = (input$stressDate-(i*365.25)),
+                          "Low Guidance Level" = stationMetaDataSubset$guidanceLevel, 
+                          "Evaluation Level (5 Year)" = dataP66, 
+                          "Recovery Level" = dataP40, 
+                          "Month Data Count (1 Year)" = count1year, 
+                          "Month Data Count (5 Year)" = count5year, 
+                          "Stressed Criteria Met" = stationMetaDataSubset$guidanceLevel > dataP66, 
+                          "Recovery Criteria Met" = stationMetaDataSubset$guidanceLevel <= dataP40,
+                          check.names = F)
+  dtFinal = rbind(dtFinal,dtStressed)
+}
+dtFinal[,1] <- as.character(dtFinal[,1])
+```
+
+STRESSED LAKE EVALUATION REPORT  
+SWFWMD - Bureau of Regulation  
+`r format(Sys.time(), "%B %d, %Y")`  
+Name: `r inv$name`
+\
+County: `r inventory()$COUNTY_NAME`
+\
+\
+\
+
+
+A summary table of historical daily lake levels for `r inv$name` over the period of record beginning `r inv$beginDate` and ended `r inv$endDate` is provided in Table \ref{lakeLevelSum}. The lake has a historical median level of `r inv$p50`ft, minimum of `r inv$min`ft and maximum of `r inv$max`ft (Table \ref{lakeLevelSum}). Observed historical lake levels are illustrated in Figure 1 with low guidance level of `r dtFinal[1,2]`ft and 5 year evaluation level of `r signif(dtFinal[1,3], digits=5)`ft (Table \ref{stressedLakeHistory}). The stressed lake criteria met status was evaluated on `r dtFinal[1,1]` as `r dtFinal[1,7]`. The recovery criteria met status was `r dtFinal[1,8]` (Table \ref{stressedLakeHistory}). Reviewer should evaluate historical criteria met status in Table \ref{stressedLakeHistory} to determine if all conditions for stressed and recovery are assessed (provided in the Applicants Handbook, specifically 3.9.2.5.1 below) before determining if the lake is considered stressed.
+
+```{r results='asis'}
+if(input$format == "PDF"){
+  xtSumStats = xtable(inv, caption = "Summary statistics of lake levels (NGVD29 ft)", label = "lakeLevelSum")
+  align(xtSumStats) = c("p{.8cm}","p{.8cm}","p{2.8cm}","p{1.7cm}","p{1.7cm}","p{0.5cm}",rep("p{0.8cm}", 5))
+  print(xtSumStats, caption.placement = "top", comment = FALSE, include.rownames = FALSE)
+} else {kable(inv, row.names = FALSE, caption = "Summary statistics of lake levels (NGVD29 ft)")}
+```
+
+
+```{r, echo = FALSE,  fig.cap = 'Hydrograph of lake, low guidance, and evaluation levels'}
+dataFormMon5year <- dataFormMon()[
+  as.Date(paste0(dataFormMon()$date, "-01"), 
+          format = "%Y-%m-%d") > as.Date(input$stressDate)-(5*365.25),]
+dataFormMon5year <- dataFormMon5year[as.Date(paste0(dataFormMon5year$date, "-01"), 
+                                             format = "%Y-%m-%d") < as.Date(input$stressDate),]
+dataFormMon1year <- dataFormMon5year[as.Date(paste0(dataFormMon5year$date, "-01"), 
+                                             format = "%Y-%m-%d") < as.Date(input$stressDate),]
+par(mar = c(2,4,1,0.5))
+
+stationMetaDataSubset = subset(stationMetaData, 
+                               SID == strsplit(as.character(input$stationName), ",")[[1]][1])
+plot(dataForm()$date, dataForm()$level, xlim = c(input$dates[1], input$dates[2]), type = "n", 
+     ylim = c(min(stationMetaDataSubset$guidanceLevel, min(dataForm()$level, na.rm = TRUE)), 
+              max(stationMetaDataSubset$highLevel, max(dataForm()$level, na.rm = TRUE))), 
+     xlab = "Date", ylab = "Level (NGVD29, ft)", pch = 2)
+abline(h = stationMetaDataSubset$highLevel, col = "red", lty = 3)
+abline(h = stationMetaDataSubset$guidanceLevel, col = 20, lty = 5)
+
+for(i in 1:length(unique(dataForm()$siteID))){
+  d = dataForm()[dataForm()$siteID == sort(unique(dataForm()$siteID))[i],]
+  points(d$date, d$level, pch = i, col = i, cex = 0.5)
+}
+lines(x = c(input$stressDate, as.Date(input$stressDate)-(5*365.25)), 
+      y = c(as.numeric(quantile(dataFormMon5year$level, 0.66667, na.rm = TRUE)),
+            quantile(dataFormMon5year$level, 0.66667, na.rm = TRUE)), lty = 4, col = "magenta")
+legend("topleft", legend = c(input$stationName, "Evaluation Level 5 Year", "Guidance Level"), 
+       col = c("black", "red", 20), pch = c(1,NA,NA), 
+       lty = c(0,3,5), merge = FALSE, bty = "n", cex = 0.75)
+#     seq(1:length(unlist(strsplit(as.character(input$stationName), ",")))
+```
+
+\newpage
+\break
+
+```{r, echo=FALSE, results = "asis"}
+if(input$format == "PDF"){
+  XTdtFinal <- xtable(dtFinal, caption = "Stressed lake history", label = "stressedLakeHistory")
+  align(XTdtFinal) = c("p{2cm}","p{2cm}",rep("p{1.5cm}", 7))
+  print(XTdtFinal, caption.placement = "top", include.rownames = FALSE, comment = FALSE)
+} else {kable(dtFinal,row.names = FALSE, caption = "Stressed lake history")}
+```
+
+3.9.2.5.1 LAKE IMPACTS WITHIN THE SWUCA.
+
+a. Stressed Lake Definition-A stressed condition for a lake within the SWUCA is based on continuous monthly data for the most recent five-year period, with the latest readings being within the past 12 months, and two-thirds of the values are at or below the adopted minimum low management level. For those lakes within the SWUCA without established management levels, stressed conditions shall be determined on a case-by-case basis through site investigation by District staff. The District maintains a list of lakes within the District that have been determined to be stressed. Lakes that have been classified as stressed will be evaluated for a recovered classification two years after the lake is determined to be stressed.
+
+b. Recovered Lake Definition-Once a lake within the SWUCA is classified as stressed it will be taken out of that classification only when it is classified as recovered. A lake is recovered if it has fluctuated above its minimum low management level 60% of the time during the previous five-year period and has reached its maximum desirable stage during three of the previous five years, with an average duration of three months per year.
+
+c. Stressed Lakes, New Withdrawals-Due to the cumulative impacts of groundwater and surface water withdrawals, new withdrawals that affect stressed lakes within the SWUCA shall be permitted only if all the conditions for issuance are met and the WUP contains a condition restricting withdrawals to those times when the lake is at or above the High Minimum Level or High Guidance Level, whichever is appropriate.
+
+d. Stressed Lakes, Existing Withdrawals-Existing permitted surface withdrawals from stressed lakes within the SWUCA shall be abandoned or replaced with AWS within three years from January 1, 2003, if the withdrawal was not previously located within the Highlands Ridge Water Use Caution Area. Existing permitted withdrawals from lakes that are determined by the District to be stressed shall be abandoned or replaced with AWS within three years of the notice to the Permittees of the designation of the lake as stressed unless the Permittee requests a modification of the WUP to restrict withdrawals to those times when the lake is at or above the High Minimum Level or High Guidance Level, whichever is appropriate.
+
+*Report errors/improvements to Nathan.Johnson@swfwmd.state.fl.us*
+
+
