@@ -3,7 +3,7 @@
 # date: "2015-06-17"
 # server.R
 
-# some change
+# some change checking user name
 # input = data.frame(stationName = "23452,NA,HOLDEN LAKE", stressDate = as.Date("2015-03-31"))
 # input = data.frame(stationName = "17570,NA,LAKE HELENE", stressDate = as.Date("2007-03-31"))
 # input = data.frame(stationName = "783344,23549,LAKE GENEVA (USED FRANCIS)", stressDate = as.Date("2007-03-31"))
